@@ -1,73 +1,56 @@
 'use strict';
 
-const { Server } = require('http');
+const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-const ALLOWED_ENDPOINTS = {
-  addExpense: {
-    route: '/add-expense',
-    methods: ['POST'],
-  },
-};
-
 function createServer() {
-  const server = new Server();
+  const server = new http.Server();
 
   server.on('request', (req, res) => {
-    const baseUrl = `http://${req.headers.host}`;
-    const url = new URL(req.url, baseUrl);
-
-    if (
-      url.pathname !== ALLOWED_ENDPOINTS.addExpense.route ||
-      !ALLOWED_ENDPOINTS.addExpense.methods.includes(req.method)
-    ) {
+    if (req.url !== '/add-expense') {
+      res.setHeader('Content-type', 'text/plain');
       res.statusCode = 404;
-      res.setHeader('Content-Type', 'text/plain');
-
-      res.end('Invalid url');
+      res.end('Wrong request url');
 
       return;
     }
 
-    const bodyChunks = [];
+    const chunks = [];
 
     req.on('data', (chunk) => {
-      bodyChunks.push(chunk);
+      chunks.push(chunk);
     });
 
     req.on('end', () => {
-      const json = Buffer.concat(bodyChunks);
-      const expense = JSON.parse(json);
+      const text = Buffer.concat(chunks).toString();
 
-      if (!expense?.date || !expense?.title || !expense?.amount) {
+      const data = JSON.parse(text);
+
+      if (!data['date'] || !data['title'] || !data['amount']) {
         res.statusCode = 400;
-        res.end('Bad user input');
+        res.end('Not full data');
 
         return;
       }
 
-      const fileStream = fs.createWriteStream(
-        path.normalize(path.join(__dirname, '../db/expense.json')),
-      );
+      const writeStream = fs.createWriteStream(path.resolve('db/expense.json'));
 
-      fileStream.on('error', (error) => {
-        res.statusCode = 500;
-        res.setHeader('Content-Type', 'text/plain');
-        /* eslint-disable-next-line no-console */
-        console.error(error);
-        res.end('Server error');
-      });
+      writeStream.end(text);
 
-      fileStream.on('finish', () => {
+      writeStream.on('finish', () => {
+        res.setHeader('Content-type', 'application/json');
         res.statusCode = 200;
-        res.setHeader('Content-Type', 'application/json');
-        res.end(JSON.stringify(expense, null, 2));
+        res.end(text);
       });
+    });
 
-      fileStream.end(json);
+    req.on('error', (error) => {
+      res.statusCode = 400;
+      res.end(`Request error: ${error}`);
     });
   });
+  server.on('error', () => {});
 
   return server;
 }
