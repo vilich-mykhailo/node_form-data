@@ -1,56 +1,76 @@
+/* eslint-disable no-console */
 'use strict';
 
 const http = require('http');
 const fs = require('fs');
-const path = require('path');
 
 function createServer() {
+  /* Write your code here */
+  // Return instance of http.Server class
+
   const server = new http.Server();
 
   server.on('request', (req, res) => {
-    if (req.url !== '/add-expense') {
-      res.setHeader('Content-type', 'text/plain');
-      res.statusCode = 404;
-      res.end('Wrong request url');
+    if (req.method === 'POST' && req.url === '/add-expense') {
+      let body = '';
+
+      req.on('data', (chunk) => {
+        body += chunk.toString();
+      });
+
+      req.on('end', () => {
+        let fields;
+
+        try {
+          fields = JSON.parse(body);
+        } catch (err) {
+          res.statusCode = 400;
+
+          return res.end('Invalid JSON');
+        }
+
+        if (!fields.amount || !fields.date || !fields.title) {
+          res.statusCode = 400;
+
+          return res.end('Missing required fields');
+        }
+
+        const filePath = 'db/expense.json';
+
+        const newData = {
+          amount: fields.amount,
+          date: fields.date,
+          title: fields.title,
+        };
+
+        fs.writeFileSync(filePath, JSON.stringify(newData));
+
+        const file = fs.readFileSync(filePath);
+
+        res.setHeader('Content-Type', 'application/json');
+        res.end(file);
+      });
 
       return;
     }
 
-    const chunks = [];
+    if (req.url !== '/' && req.url !== '/add-expense') {
+      res.statusCode = 404;
 
-    req.on('data', (chunk) => {
-      chunks.push(chunk);
-    });
+      return res.end('Invalid Url');
+    }
 
-    req.on('end', () => {
-      const text = Buffer.concat(chunks).toString();
+    res.setHeader('Content-type', 'text/html');
 
-      const data = JSON.parse(text);
-
-      if (!data['date'] || !data['title'] || !data['amount']) {
-        res.statusCode = 400;
-        res.end('Not full data');
-
-        return;
-      }
-
-      const writeStream = fs.createWriteStream(path.resolve('db/expense.json'));
-
-      writeStream.end(text);
-
-      writeStream.on('finish', () => {
-        res.setHeader('Content-type', 'application/json');
-        res.statusCode = 200;
-        res.end(text);
-      });
-    });
-
-    req.on('error', (error) => {
-      res.statusCode = 400;
-      res.end(`Request error: ${error}`);
-    });
+    res.end(
+      `<form method="POST" action="/add-expense">
+        <input name="date" type="date">
+        <input name="title" type="text">
+        <input name="amount" type="number">
+        <button type="submit">Submit</button>
+      </form>`,
+    );
   });
-  server.on('error', () => {});
 
   return server;
 }
